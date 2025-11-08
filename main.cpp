@@ -1,4 +1,3 @@
-#include <windows.h>
 #include <iostream>
 #include "keyboard.h"
 #include <string>
@@ -7,18 +6,45 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
-static std::vector<Shortcut *> shortcuts(1024, nullptr);
+#include <thread>
+#include <chrono>
+#include "libevdev/libevdev.h"
 
-static std::set<DWORD> pressed_keys;
-static std::set<DWORD> shortcut_keys;
+static std::vector<Shortcut *> shortcuts(1024, nullptr);
+static std::set<__key_t> pressed_keys;
+static std::set<__key_t> shortcut_keys;
 static bool flag = false;
 
-size_t HashVK(std::set<DWORD>* vks)
+#ifdef _WIN32
+#include <windows.h>
+#define r_key 0x0D
+std::string VkToString(DWORD vkCode)
+{
+    UINT scanCode = MapVirtualKey(vkCode, MAPVK_VK_TO_VSC);
+    char name[128] = {0};
+    if (GetKeyNameTextA(scanCode << 16, name, sizeof(name)) > 0)
+        return std::string(name);
+    return "";
+}
+
+#endif
+#ifdef __linux__
+#define r_key KEY_ENTER
+std::string VkToString(__key_t vkCode)
+{
+    const char *name = libevdev_event_code_get_name(EV_KEY, vkCode);
+    if (name)
+        return std::string(name);
+    return "Unknown";
+}
+#endif
+
+size_t HashVK(std::set<__key_t> &vks)
 {
     size_t seed = 0;
-    std::hash<DWORD> hasher;
+    std::hash<size_t> hasher;
 
-    for (DWORD vk : *vks)
+    for (size_t vk : vks)
     {
         seed ^= hasher(vk) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
     }
@@ -26,24 +52,14 @@ size_t HashVK(std::set<DWORD>* vks)
     return seed;
 }
 
-
-std::string VkToString(DWORD vkCode)
-{
-    UINT scanCode = MapVirtualKey(vkCode, MAPVK_VK_TO_VSC);
-    char name[128] = {0};   
-    if (GetKeyNameTextA(scanCode << 16, name, sizeof(name)) > 0)
-        return std::string(name);
-    return "";
-}
-
-std::string VksToString(std::set<DWORD> *vks)
+std::string VksToString(std::set<__key_t> &vks)
 {
     std::string keys_str = "";
     bool first = true;
-    for(const auto vk: *vks)
+    for (const auto vk : vks)
     {
         std::string vkStr = VkToString(vk);
-        if(!first)
+        if (!first)
         {
             keys_str += " + ";
         }
@@ -53,65 +69,61 @@ std::string VksToString(std::set<DWORD> *vks)
     return keys_str;
 }
 
-void CALLBACK HandleDwn(DWORD vkCode)
+void HandleDwn(__key_t vkCode)
 {
     if (flag)
     {
-        if (vkCode == 0x0D)
+        if (vkCode == r_key)
         {
             flag = false;
             return;
         }
         pressed_keys.insert(vkCode);
-        std::string keys_str = VksToString(&pressed_keys);
-        std::cout << keys_str << std::endl;
+        std::cout << VksToString(pressed_keys) << std::endl;
     }
     shortcut_keys.insert(vkCode);
-    size_t hash_index = HashVK(&shortcut_keys) % shortcuts.size();
+    size_t hash_index = HashVK(shortcut_keys) % shortcuts.size();
 
     Shortcut *current = shortcuts[hash_index];
-    if(!current) return;
-    if(current && current->next)
+    if (!current)
+        return;
+    if (current && current->next)
     {
-        std::string keys_str = VksToString(&shortcut_keys);
-        while(current->keys != keys_str)
+        std::string keys_str = VksToString(shortcut_keys);
+        while (current && current->keys != keys_str)
         {
             current = current->next;
         }
     }
-    if(current){
-    // std::cout << "Hanging? " << hash_index <<  std::endl;
+    if (current)
+    {
+        // std::cout << "Hanging? " << hash_index <<  std::endl;
         std::cout << "Running Command: " << current->name << std::endl;
         system(current->cmd.c_str());
     }
-
 }
 
-void CALLBACK HandleUp(DWORD vkCode)
+void HandleUp(__key_t vkCode)
 {
     shortcut_keys.erase(vkCode);
 }
 
-
 int main()
 {
     LoadShortcuts(shortcuts);
-    bool hooked = Create(HandleDwn, HandleUp);
-    if (!hooked)
-    {
-        return -1;
-    }
+    Create(HandleDwn, HandleUp);
     char c;
     do
     {
         std::cout << "Shortcuts:" << std::endl;
 
-        for(const auto &s: shortcuts)
+        for (const auto &s : shortcuts)
         {
-            if(s){
+            if (s)
+            {
                 std::cout << "\t" << s->name << ":" << std::endl;
                 std::cout << "\t\t" << "Keys: " << s->keys << std::endl;
-                std::cout << "\t\t" << "Command: " <<s->cmd << std::endl;
+                std::cout << "\t\t" << "Command: " << s->cmd << std::endl;
             }
         }
         // Print shortcuts here
@@ -130,44 +142,47 @@ int main()
             size_t hash;
 
             std::cout << "Enter Shortcut Name: ";
-            std::cin.ignore();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // flush buffer
             std::getline(std::cin, name);
 
             char cont = '0';
-            
+
             while (cont != 'y')
             {
                 pressed_keys.clear();
                 std::cout << "Press keys for shortcut: " << std::endl;
                 flag = true;
-                while (flag);
-                    Sleep(10);
-                if(pressed_keys.empty()){
+                while (flag)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+                if (pressed_keys.empty())
+                {
                     std::cout << "EMPTY" << std::endl;
                     cont = 'n';
                     continue;
                 }
+
                 std::cout.flush();
                 std::cout << "Are these the keys you want for your shortcut(y/n)?: ";
-                std::cin.ignore();
+
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // clear leftover newline
                 std::cin >> cont;
-                std::cout << cont << std::endl;
+
+                cont = std::tolower(cont); // normalize input (Y/N vs y/n)
             }
 
-            std::string keys_str = VksToString(&pressed_keys);
-
-            hash = HashVK(&pressed_keys);
-            std::cout << hash << std::endl;
+            std::string keys_str = VksToString(pressed_keys);
+            hash = HashVK(pressed_keys);
             pressed_keys.clear();
 
             std::cout << "Enter Shortcut Command: ";
-            std::cin.ignore();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // flush buffer again
             std::getline(std::cin, cmd);
 
             SaveShortcut(shortcuts, name, hash, cmd, keys_str);
-
             break;
         }
+
         case 'q':
             break;
         default:

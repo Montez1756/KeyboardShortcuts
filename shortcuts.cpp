@@ -17,6 +17,8 @@ Shortcut *CreateShortcut(const std::string  name, const std::string cmd, const s
 bool SaveShortcut(std::vector<Shortcut *> &shortcuts, const std::string name, const size_t hash, const std::string cmd, const std::string keys)
 {
     for(const auto &s: shortcuts){
+        if(!s)
+            continue;
         if(s->name == name || s->keys == keys)
             return false;
     }
@@ -25,13 +27,14 @@ bool SaveShortcut(std::vector<Shortcut *> &shortcuts, const std::string name, co
     if (out.is_open())
     {
         out << name << "|" << hash << "|" << cmd << "|" << keys << std::endl;
+        Shortcut *s = CreateShortcut(name, keys, cmd);
+    
+        AddShortcut(shortcuts, s, hash);
+        out.close();
+        return true;
     }
 
-    Shortcut *s = CreateShortcut(name, keys, cmd);
-
-    AddShortcut(shortcuts, s, hash);
-
-    return out.is_open();
+    return false;
 }
 
 std::vector<std::string> split(std::string str, char delim)
@@ -61,6 +64,7 @@ bool LoadShortcuts(std::vector<Shortcut *> &shortcuts)
             size_t hash = std::stoull(splits[1]);
             AddShortcut(shortcuts, s, hash);
         }
+        in.close();
         return true;
     }
     return false;
