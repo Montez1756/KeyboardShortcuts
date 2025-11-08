@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <cstdint>
-static std::vector<Shortcut *> shortcuts(50, NULL);
+static std::vector<Shortcut *> shortcuts(1024, nullptr);
 
 static std::set<DWORD> pressed_keys;
 static std::set<DWORD> shortcut_keys;
@@ -15,23 +15,42 @@ static bool flag = false;
 
 size_t HashVK(std::set<DWORD>* vks)
 {
-    size_t result = 0;
+    size_t seed = 0;
+    std::hash<DWORD> hasher;
+
     for (DWORD vk : *vks)
     {
-        result += vk;
+        seed ^= hasher(vk) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
     }
-    return result;
 
+    return seed;
 }
 
 
 std::string VkToString(DWORD vkCode)
 {
     UINT scanCode = MapVirtualKey(vkCode, MAPVK_VK_TO_VSC);
-    char name[128] = {0};
+    char name[128] = {0};   
     if (GetKeyNameTextA(scanCode << 16, name, sizeof(name)) > 0)
         return std::string(name);
     return "";
+}
+
+std::string VksToString(std::set<DWORD> *vks)
+{
+    std::string keys_str = "";
+    bool first = true;
+    for(const auto vk: *vks)
+    {
+        std::string vkStr = VkToString(vk);
+        if(!first)
+        {
+            keys_str += " + ";
+        }
+        keys_str += vkStr;
+        first = false;
+    }
+    return keys_str;
 }
 
 void CALLBACK HandleDwn(DWORD vkCode)
@@ -44,25 +63,26 @@ void CALLBACK HandleDwn(DWORD vkCode)
             return;
         }
         pressed_keys.insert(vkCode);
-        bool first = true;
-        for (const auto c : pressed_keys)
-        {
-            std::string vkStr = VkToString(c);
-            if (!first)
-                std::cout << " + ";
-            std::cout << vkStr;
-            first = false;
-        }
-        std::cout << std::endl;
+        std::string keys_str = VksToString(&pressed_keys);
+        std::cout << keys_str << std::endl;
     }
     shortcut_keys.insert(vkCode);
-    size_t hash_index = HashVK(&shortcut_keys) % 50;
+    size_t hash_index = HashVK(&shortcut_keys) % shortcuts.size();
 
-    Shortcut *s = shortcuts[hash_index];
+    Shortcut *current = shortcuts[hash_index];
+    if(!current) return;
+    if(current && current->next)
+    {
+        std::string keys_str = VksToString(&shortcut_keys);
+        while(current->keys != keys_str)
+        {
+            current = current->next;
+        }
+    }
+    if(current){
     // std::cout << "Hanging? " << hash_index <<  std::endl;
-    if(s){
-        std::cout << "Running Command: " << s->name << std::endl;
-        system(s->cmd.c_str());
+        std::cout << "Running Command: " << current->name << std::endl;
+        system(current->cmd.c_str());
     }
 
 }
@@ -113,30 +133,28 @@ int main()
             std::cin.ignore();
             std::getline(std::cin, name);
 
-            std::cout << "Press keys for shortcut: " << std::endl;
-            flag = true;
-            while (flag);
+            char cont = '0';
             
-            char cont;
-            std::cout << "Are these the keys you want for your shortcut(y/n)?: ";
-            std::cin.ignore();
-            std::cin >> cont;
-            
-            while (pressed_keys.empty() || cont != 'y')
+            while (cont != 'y')
             {
                 pressed_keys.clear();
-                std::cout << "Enter Keys again..." << std::endl;
+                std::cout << "Press keys for shortcut: " << std::endl;
                 flag = true;
                 while (flag);
+                    Sleep(10);
+                if(pressed_keys.empty()){
+                    std::cout << "EMPTY" << std::endl;
+                    cont = 'n';
+                    continue;
+                }
+                std::cout.flush();
                 std::cout << "Are these the keys you want for your shortcut(y/n)?: ";
                 std::cin.ignore();
                 std::cin >> cont;
+                std::cout << cont << std::endl;
             }
-            std::string keys_str;
-            for(const auto vk: pressed_keys)
-            {
-                keys_str += VkToString(vk) + " ";
-            }
+
+            std::string keys_str = VksToString(&pressed_keys);
 
             hash = HashVK(&pressed_keys);
             std::cout << hash << std::endl;
@@ -146,12 +164,8 @@ int main()
             std::cin.ignore();
             std::getline(std::cin, cmd);
 
-            Shortcut *s = new Shortcut;
-            s->name = name;
-            s->keys = keys_str;
-            s->cmd = cmd;
-            shortcuts[hash % 50] = s;
-            SaveShortcut(name, hash, cmd, keys_str);
+            SaveShortcut(shortcuts, name, hash, cmd, keys_str);
+
             break;
         }
         case 'q':
