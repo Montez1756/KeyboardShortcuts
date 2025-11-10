@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <thread>
 #include <chrono>
-#include "libevdev/libevdev.h"
 
 static std::vector<Shortcut *> shortcuts(1024, nullptr);
 static std::set<__key_t> pressed_keys;
@@ -23,12 +22,13 @@ std::string VkToString(DWORD vkCode)
     UINT scanCode = MapVirtualKey(vkCode, MAPVK_VK_TO_VSC);
     char name[128] = {0};
     if (GetKeyNameTextA(scanCode << 16, name, sizeof(name)) > 0)
-        return std::string(name);
+    return std::string(name);
     return "";
 }
 
 #endif
 #ifdef __linux__
+#include "libevdev/libevdev.h"
 #define r_key KEY_ENTER
 std::string VkToString(__key_t vkCode)
 {
