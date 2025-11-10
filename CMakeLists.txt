@@ -14,11 +14,13 @@ add_executable(Keyboard
     keyboard.h
 )
 
+if(LINUX)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBEVDEV REQUIRED libevdev)
 target_include_directories(Keyboard PRIVATE ${LIBEVDEV_INCLUDE_DIRS})
 target_link_libraries(Keyboard PRIVATE ${LIBEVDEV_LIBRARIES})
-
+endif()
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(Keyboard PRIVATE -Wall -Wextra -Wpedantic)
 endif()
