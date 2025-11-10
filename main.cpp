@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <thread>
 #include <chrono>
-#include "libevdev/libevdev.h"
 
 static std::vector<Shortcut *> shortcuts(1024, nullptr);
 static std::set<__key_t> pressed_keys;
@@ -29,6 +28,7 @@ std::string VkToString(DWORD vkCode)
 
 #endif
 #ifdef __linux__
+#include "libevdev/libevdev.h"
 #define r_key KEY_ENTER
 std::string VkToString(__key_t vkCode)
 {
@@ -142,7 +142,7 @@ int main()
             size_t hash;
 
             std::cout << "Enter Shortcut Name: ";
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // flush buffer
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             std::getline(std::cin, name);
 
             char cont = '0';
@@ -162,13 +162,12 @@ int main()
                     continue;
                 }
 
-                std::cout.flush();
                 std::cout << "Are these the keys you want for your shortcut(y/n)?: ";
 
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // clear leftover newline
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
                 std::cin >> cont;
 
-                cont = std::tolower(cont); // normalize input (Y/N vs y/n)
+                cont = std::tolower(cont);
             }
 
             std::string keys_str = VksToString(pressed_keys);
@@ -176,13 +175,25 @@ int main()
             pressed_keys.clear();
 
             std::cout << "Enter Shortcut Command: ";
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // flush buffer again
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             std::getline(std::cin, cmd);
 
-            SaveShortcut(shortcuts, name, hash, cmd, keys_str);
+            if (!SaveShortcut(shortcuts, name, hash, cmd, keys_str))
+            {
+                std::cerr << "[-]Failed to save shortcut[-]" << std::endl;
+            }
             break;
         }
-
+        case 'd':
+        {
+            std::string name;
+            std::cout << "Enter shortcut name to be deleted: ";
+            std::cin >> name;
+            if(DeleteShortcut(shortcuts, name))
+                std::cout << "Delete: " << name;
+            else
+                std::cerr <<  "Failed to Delete: " << name;
+        }
         case 'q':
             break;
         default:
