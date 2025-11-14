@@ -10,70 +10,16 @@
 #include <chrono>
 
 static std::vector<Shortcut *> shortcuts(1024, nullptr);
-static std::set<__key_t> pressed_keys;
-static std::set<__key_t> shortcut_keys;
+static std::set<e_key_t> pressed_keys;
+static std::set<e_key_t> shortcut_keys;
 static bool flag = false;
 
-#ifdef _WIN32
-#include <windows.h>
-#define r_key 0x0D
-std::string VkToString(DWORD vkCode)
-{
-    UINT scanCode = MapVirtualKey(vkCode, MAPVK_VK_TO_VSC);
-    char name[128] = {0};
-    if (GetKeyNameTextA(scanCode << 16, name, sizeof(name)) > 0)
-    return std::string(name);
-    return "";
-}
 
-#endif
-#ifdef __linux__
-#include "libevdev/libevdev.h"
-#define r_key KEY_ENTER
-std::string VkToString(__key_t vkCode)
-{
-    const char *name = libevdev_event_code_get_name(EV_KEY, vkCode);
-    if (name)
-        return std::string(name);
-    return "Unknown";
-}
-#endif
-
-size_t HashVK(std::set<__key_t> &vks)
-{
-    size_t seed = 0;
-    std::hash<size_t> hasher;
-
-    for (size_t vk : vks)
-    {
-        seed ^= hasher(vk) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-    }
-
-    return seed;
-}
-
-std::string VksToString(std::set<__key_t> &vks)
-{
-    std::string keys_str = "";
-    bool first = true;
-    for (const auto vk : vks)
-    {
-        std::string vkStr = VkToString(vk);
-        if (!first)
-        {
-            keys_str += " + ";
-        }
-        keys_str += vkStr;
-        first = false;
-    }
-    return keys_str;
-}
-
-void HandleDwn(__key_t vkCode)
+void HandleDwn(e_key_t vkCode)
 {
     if (flag)
     {
-        if (vkCode == r_key)
+        if (vkCode == R_KEY)
         {
             flag = false;
             return;
@@ -99,11 +45,13 @@ void HandleDwn(__key_t vkCode)
     {
         // std::cout << "Hanging? " << hash_index <<  std::endl;
         std::cout << "Running Command: " << current->name << std::endl;
+        std::cout << "\t" << current->keys << std::endl;
+        std::cout << "\t" << current->cmd << std::endl;
         system(current->cmd.c_str());
     }
 }
 
-void HandleUp(__key_t vkCode)
+void HandleUp(e_key_t vkCode)
 {
     shortcut_keys.erase(vkCode);
 }
